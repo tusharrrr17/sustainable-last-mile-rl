@@ -1,0 +1,32 @@
+[
+  {
+    "Policy": "Random Valid Baseline",
+    "Avg_Delivery_Time_min": 66.89,
+    "Avg_Distance_km": 20.95,
+    "Avg_Cost_INR": 170.38,
+    "Avg_CO2_kg": 4.324,
+    "On_Time_Rate_Pct": 98.0,
+    "Capacity_Utilization_Pct": 56.4,
+    "Mean_Step_Reward": 6.505
+  },
+  {
+    "Policy": "Rule-Based Heuristic",
+    "Avg_Delivery_Time_min": 64.96,
+    "Avg_Distance_km": 20.84,
+    "Avg_Cost_INR": 45.54,
+    "Avg_CO2_kg": 0.399,
+    "On_Time_Rate_Pct": 98.4,
+    "Capacity_Utilization_Pct": 74.0,
+    "Mean_Step_Reward": 6.739
+  },
+  {
+    "Policy": "Trained DQN Agent (Ours)",
+    "Avg_Delivery_Time_min": 64.98,
+    "Avg_Distance_km": 20.84,
+    "Avg_Cost_INR": 47.33,
+    "Avg_CO2_kg": 0.448,
+    "On_Time_Rate_Pct": 98.2,
+    "Capacity_Utilization_Pct": 44.8,
+    "Mean_Step_Reward": 6.729
+  }
+]
