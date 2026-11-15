@@ -3,102 +3,439 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sustainable Last-Mile Delivery Coordinator (DQN)</title>
+  <title>Autonomous Last-Mile Delivery Control Tower v2.0 (DQN)</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    #ncrMap { height: 340px; width: 100%; border-radius: 0.75rem; z-index: 1; }
+    .leaflet-container { background: #020617 !important; }
+  </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
-  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10">
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-20">
     <div class="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-4">
       <div>
-        <span class="text-xs uppercase tracking-widest text-emerald-400 font-semibold">Reinforcement Learning Dispatch Engine</span>
-        <h1 class="text-xl md:text-2xl font-bold text-white">Sustainable Last-Mile Delivery Coordinator</h1>
+        <div class="flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="text-xs uppercase tracking-widest text-emerald-400 font-semibold">Autonomous Fleet Control Tower v2.0</span>
+        </div>
+        <h1 class="text-xl md:text-2xl font-bold text-white">Sustainable Last-Mile Delivery Coordinator (RL)</h1>
       </div>
-      <div class="flex items-center gap-3 text-xs">
-        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">Delhi-NCR 20 Zones</span>
-        <span class="px-3 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">100 Vehicles (EV/Petrol/Diesel)</span>
-        <span class="px-3 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30">Action-Masked DQN</span>
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">Live NCR Geo-Telemetry</span>
+        <span class="px-3 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">XAI Q-Value Ranking</span>
+        <span class="px-3 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30">Stateful 100-Vehicle Shift Sim</span>
       </div>
     </div>
   </header>
 
   <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
-    <!-- Top Section: Live Order Simulator + Live Comparison -->
+    <!-- SECTION 1: Live Single-Order Dispatch + Interactive Delhi-NCR Map + XAI -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <!-- Form Card -->
-      <section class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <h2 class="text-lg font-semibold text-white mb-1">1. Live Order & Scenario Dispatch</h2>
-        <p class="text-xs text-slate-400 mb-5">Configure order parameters to test real-time DQN vehicle assignment against baselines.</p>
+      <!-- Left: Dispatch Form + XAI Q-Value Bars -->
+      <div class="lg:col-span-5 space-y-6">
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+          <h2 class="text-lg font-semibold text-white mb-1">1. Live NCR Order Dispatch</h2>
+          <p class="text-xs text-slate-400 mb-4">Configure route & constraints to watch the DQN dispatch & animate on the NCR map.</p>
 
-        <form id="dispatchForm" class="space-y-4">
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Pickup Zone</label>
-              <select id="pickup_zone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-                {% for z in zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}
-              </select>
+          <form id="dispatchForm" class="space-y-3.5">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Pickup Zone</label>
+                <select id="pickup_zone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                  {% for z in zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Delivery Zone</label>
+                <select id="delivery_zone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                  {% for z in zones %}<option value="{{ z }}" {% if loop.index == 4 %}selected{% endif %}>{{ z }}</option>{% endfor %}
+                </select>
+              </div>
             </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Delivery Zone</label>
-              <select id="delivery_zone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-                {% for z in zones %}<option value="{{ z }}" {% if loop.index == 4 %}selected{% endif %}>{{ z }}</option>{% endfor %}
-              </select>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Order Weight (0.5 - 25 kg)</label>
+                <input id="order_weight_kg" type="number" step="0.5" min="0.5" max="25" value="12.5"
+                       class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">SLA Deadline (min)</label>
+                <input id="deadline_min" type="number" min="20" max="360" value="95"
+                       class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+              </div>
             </div>
+
+            <div class="grid grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Priority</label>
+                <select id="priority" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                  {% for p in priorities %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Traffic</label>
+                <select id="traffic_level" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                  {% for t in traffic_levels %}<option value="{{ t }}" {% if t == 'High' %}selected{% endif %}>{{ t }}</option>{% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Weather</label>
+                <select id="weather" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                  {% for w in weather_conditions %}<option value="{{ w }}">{{ w }}</option>{% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <button type="submit"
+                    class="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg transition shadow-lg shadow-emerald-500/20">
+              Dispatch Vehicle & Animate Corridor
+            </button>
+          </form>
+        </section>
+
+        <!-- Explainable AI (XAI) Q-Value Ranking -->
+        <section class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-semibold text-white">Explainable AI: Neural Q-Value Ranking</h3>
+            <span class="text-[11px] text-slate-400">Top 6 / 15 Fleet Slots</span>
           </div>
+          <p class="text-xs text-slate-400 mb-3">Why did the DQN pick this vehicle? Higher Q-value = higher expected long-term reward; overweight slots are hard-masked.</p>
+          <div id="xaiBars" class="space-y-2 text-xs"></div>
+        </section>
+      </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Order Weight (0.5 - 25 kg)</label>
-              <input id="order_weight_kg" type="number" step="0.5" min="0.5" max="25" value="12.5"
-                     class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">SLA Deadline (min)</label>
-              <input id="deadline_min" type="number" min="20" max="360" value="95"
-                     class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
-            </div>
-          </div>
-
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Priority</label>
-              <select id="priority" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-                {% for p in priorities %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Traffic Level</label>
-              <select id="traffic_level" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-                {% for t in traffic_levels %}<option value="{{ t }}" {% if t == 'High' %}selected{% endif %}>{{ t }}</option>{% endfor %}
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">Weather</label>
-              <select id="weather" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-                {% for w in weather_conditions %}<option value="{{ w }}">{{ w }}</option>{% endfor %}
-              </select>
-            </div>
-          </div>
-
-          <button type="submit"
-                  class="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg transition shadow-lg shadow-emerald-500/20">
-            Run RL Dispatch Inference
-          </button>
-        </form>
-      </section>
-
-      <!-- Live Inference Result Card -->
-      <section class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+      <!-- Right: Live NCR Map + Comparison Table -->
+      <section class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between space-y-5">
         <div>
-          <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center justify-between mb-3">
             <div>
-              <h2 class="text-lg font-semibold text-white">2. Recommended Dispatch & Side-by-Side Comparison</h2>
-              <p class="text-xs text-slate-400">Estimated Corridor Distance: <span id="corridorDist" class="text-emerald-400 font-semibold">-- km</span></p>
+              <h2 class="text-lg font-semibold text-white">2. Live Delhi-NCR Corridor Telemetry</h2>
+              <p class="text-xs text-slate-400">Corridor Distance: <span id="corridorDist" class="text-emerald-400 font-semibold">-- km</span></p>
             </div>
             <span id="dqnStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Ready</span>
           </div>
 
-          <!-- Highlighted DQN Recommendation -->
-          <div class="bg-gradient-to-r from-emerald-950/60 to-slate-800/80 border border-emerald-500/30 rounded-xl p-4 mb-5">
-            <div class="text-xs text-emerald-400 uppercase font-semibold mb-1">Optimal DQN Assignment</div>
+          <!-- Interactive Leaflet Map -->
+          <div id="ncrMap" class="border border-slate-800 mb-4"></div>
+
+          <!-- Highlighted DQN Assignment -->
+          <div class="bg-gradient-to-r from-emerald-950/70 to-slate-800/80 border border-emerald-500/30 rounded-xl p-4 mb-4">
+            <div class="text-xs text-emerald-400 uppercase font-semibold mb-1">Active DQN Vehicle Dispatch</div>
             <div class="flex flex-wrap items-baseline justify-between gap-2">
-              <div class="text-xl font-bold text-white" id="dqnVehicle
+              <div class="text-xl font-bold text-white" id="dqnVehicleTitle">Loading...</div>
+              <div class="text-sm text-slate-300" id="dqnVehicleMeta">--</div>
+            </div>
+          </div>
+
+          <!-- Policy Comparison Table -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="border-b border-slate-800 text-slate-400">
+                  <th class="py-2 pr-3">Policy</th>
+                  <th class="py-2 px-3">Vehicle</th>
+                  <th class="py-2 px-3">Time</th>
+                  <th class="py-2 px-3">Cost</th>
+                  <th class="py-2 px-3">CO2</th>
+                  <th class="py-2 px-3">Load</th>
+                  <th class="py-2 pl-3 text-right">Reward</th>
+                </tr>
+              </thead>
+              <tbody id="liveCompareBody" class="divide-y divide-slate-800/70 text-slate-200"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- SECTION 2: Stateful Multi-Order NCR Shift Simulator (Upgrade 3) -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <span class="text-xs uppercase tracking-wider text-purple-400 font-semibold">Sequential MDP Fleet Simulation</span>
+          <h2 class="text-lg font-semibold text-white">3. Full NCR Shift Simulator (Real Battery Drain & Auto-Charging)</h2>
+          <p class="text-xs text-slate-400">Dispatches a stream of orders across V001-V100 where EV SoC/fuel depletes step-by-step and triggers depot fast-charging below 20%.</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <select id="shiftOrdersCount" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs">
+            <option value="15">15 Orders Shift</option>
+            <option value="25" selected>25 Orders Shift</option>
+            <option value="40">40 Orders Shift</option>
+          </select>
+          <button id="runShiftBtn" type="button"
+                  class="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-slate-950 font-semibold text-xs rounded-lg transition shadow-lg shadow-purple-500/20">
+            Simulate Full NCR Shift
+          </button>
+        </div>
+      </div>
+
+      <!-- Shift ESG & Fleet Telemetry KPI Cards -->
+      <div id="shiftKpiGrid" class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
+          <div class="text-[11px] text-slate-400">CO2 Saved vs Baseline</div>
+          <div id="kpiCo2Saved" class="text-lg font-bold text-emerald-400 mt-0.5">-- kg</div>
+          <div id="kpiTrees" class="text-[11px] text-slate-500">-- tree-days offset</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
+          <div class="text-[11px] text-slate-400">Fuel/Energy Cost Saved</div>
+          <div id="kpiCostSaved" class="text-lg font-bold text-sky-400 mt-0.5">₹--</div>
+          <div class="text-[11px] text-slate-500">Direct operational savings</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
+          <div class="text-[11px] text-slate-400">DQN vs Baseline On-Time</div>
+          <div id="kpiOnTime" class="text-lg font-bold text-white mt-0.5">--%</div>
+          <div id="kpiBaseOnTime" class="text-[11px] text-slate-500">Baseline: --%</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
+          <div class="text-[11px] text-slate-400">EV Fleet Utilization</div>
+          <div id="kpiEvShare" class="text-lg font-bold text-emerald-300 mt-0.5">--%</div>
+          <div id="kpiRecharges" class="text-[11px] text-slate-500">-- depot recharges</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
+          <div class="text-[11px] text-slate-400">End-of-Shift Fleet SoC</div>
+          <div id="kpiEndSoc" class="text-sm font-bold text-amber-300 mt-1">EV --% | P --% | D --%</div>
+          <div class="text-[11px] text-slate-500">100-vehicle live state</div>
+        </div>
+      </div>
+
+      <!-- Shift Dispatch Log Table -->
+      <div class="max-h-64 overflow-y-auto border border-slate-800 rounded-xl">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-950 sticky top-0 text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-2 px-3">#</th>
+              <th class="py-2 px-3">Corridor</th>
+              <th class="py-2 px-3">Weight</th>
+              <th class="py-2 px-3">Traffic</th>
+              <th class="py-2 px-3">DQN Vehicle</th>
+              <th class="py-2 px-3">Battery/Fuel Before</th>
+              <th class="py-2 px-3">CO2</th>
+              <th class="py-2 px-3">Status</th>
+              <th class="py-2 px-3 text-right">Reward</th>
+            </tr>
+          </thead>
+          <tbody id="shiftTimelineBody" class="divide-y divide-slate-800/70"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 3: Offline 2,000-Order Benchmark & Training Plots -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+      <div>
+        <h2 class="text-lg font-semibold text-white">4. Offline Benchmark Validation (2,000 Unseen Test Orders)</h2>
+        <p class="text-xs text-slate-400">Held-out test suite across 40 episodes.</p>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400">
+              <th class="py-2.5 pr-3">Evaluation Policy</th>
+              <th class="py-2.5 px-3">Avg Time (min)</th>
+              <th class="py-2.5 px-3">Avg Distance (km)</th>
+              <th class="py-2.5 px-3">Avg Cost (INR)</th>
+              <th class="py-2.5 px-3">Avg CO2 (kg)</th>
+              <th class="py-2.5 px-3">On-Time Rate</th>
+              <th class="py-2.5 px-3">Capacity Util</th>
+              <th class="py-2.5 pl-3 text-right">Mean RL Reward</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800">
+            {% for row in benchmarks %}
+            <tr class="{% if 'DQN' in row.Policy %}bg-emerald-500/10 font-semibold text-emerald-200{% endif %}">
+              <td class="py-2.5 pr-3">{{ row.Policy }}</td>
+              <td class="py-2.5 px-3">{{ row.Avg_Delivery_Time_min }}</td>
+              <td class="py-2.5 px-3">{{ row.Avg_Distance_km }}</td>
+              <td class="py-2.5 px-3">₹{{ row.Avg_Cost_INR }}</td>
+              <td class="py-2.5 px-3">{{ row.Avg_CO2_kg }} kg</td>
+              <td class="py-2.5 px-3">{{ row.On_Time_Rate_Pct }}%</td>
+              <td class="py-2.5 px-3">{{ row.Capacity_Utilization_Pct }}%</td>
+              <td class="py-2.5 pl-3 text-right">{{ row.Mean_Step_Reward }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <img src="/static/training_curve.png" alt="DQN Training Curve" class="w-full rounded-lg" />
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+          <img src="/static/benchmark_comparison.png" alt="Benchmark Comparison" class="w-full rounded-lg" />
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const ZONE_COORDS = {{ zone_coords_json | safe }};
+
+    // Initialize Dark CartoDB Leaflet Map centered on Delhi-NCR
+    const map = L.map("ncrMap").setView([28.585, 77.21], 10);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      attribution: "&copy; OpenStreetMap &copy; CARTO",
+      maxZoom: 18,
+    }).addTo(map);
+
+    // Plot all 20 NCR hub nodes
+    Object.entries(ZONE_COORDS).forEach(([zone, coords]) => {
+      L.circleMarker(coords, {
+        radius: 4,
+        color: "#38bdf8",
+        fillColor: "#38bdf8",
+        fillOpacity: 0.6,
+        weight: 1,
+      }).bindTooltip(zone).addTo(map);
+    });
+
+    let routeLine = null;
+    let pickupMarker = null;
+    let dropMarker = null;
+    let vehicleMarker = null;
+    let animTimer = null;
+
+    function animateRoute(start, end, vehicleLabel, vType) {
+      if (routeLine) map.removeLayer(routeLine);
+      if (pickupMarker) map.removeLayer(pickupMarker);
+      if (dropMarker) map.removeLayer(dropMarker);
+      if (vehicleMarker) map.removeLayer(vehicleMarker);
+      if (animTimer) clearInterval(animTimer);
+
+      const lineColor = vType === "EV" ? "#10b981" : (vType === "Petrol" ? "#f59e0b" : "#ef4444");
+      routeLine = L.polyline([start, end], { color: lineColor, weight: 4, dashArray: "8, 6" }).addTo(map);
+
+      pickupMarker = L.circleMarker(start, { radius: 7, color: "#fff", fillColor: "#3b82f6", fillOpacity: 1, weight: 2 })
+        .bindPopup("Pickup Hub").addTo(map);
+      dropMarker = L.circleMarker(end, { radius: 7, color: "#fff", fillColor: "#ec4899", fillOpacity: 1, weight: 2 })
+        .bindPopup("Drop Destination").addTo(map);
+
+      vehicleMarker = L.circleMarker(start, { radius: 9, color: "#ffffff", fillColor: lineColor, fillOpacity: 1, weight: 2.5 })
+        .bindTooltip(vehicleLabel, { permanent: true, direction: "top", offset: [0, -8] })
+        .addTo(map);
+
+      map.fitBounds(routeLine.getBounds(), { padding: [45, 45] });
+
+      let step = 0;
+      const totalSteps = 50;
+      animTimer = setInterval(() => {
+        step = (step + 1) % (totalSteps + 1);
+        const t = step / totalSteps;
+        const lat = start[0] + (end[0] - start[0]) * t;
+        const lon = start[1] + (end[1] - start[1]) * t;
+        vehicleMarker.setLatLng([lat, lon]);
+      }, 60);
+    }
+
+    async function runDispatch(e) {
+      if (e) e.preventDefault();
+      const payload = {
+        pickup_zone: document.getElementById("pickup_zone").value,
+        delivery_zone: document.getElementById("delivery_zone").value,
+        order_weight_kg: parseFloat(document.getElementById("order_weight_kg").value),
+        deadline_min: parseFloat(document.getElementById("deadline_min").value),
+        priority: document.getElementById("priority").value,
+        traffic_level: document.getElementById("traffic_level").value,
+        weather: document.getElementById("weather").value,
+      };
+      const res = await fetch("/api/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      document.getElementById("corridorDist").textContent = `${data.distance_km} km`;
+
+      const dqn = data.dqn;
+      document.getElementById("dqnVehicleTitle").textContent = `${dqn.Vehicle_ID} (${dqn.Vehicle_Type} · ${dqn.Vehicle_Capacity_kg} kg)`;
+      document.getElementById("dqnVehicleMeta").textContent = `ETA: ${dqn.Total_Delivery_Time_min} min | Cost: ₹${dqn.Operating_Cost_INR} | CO2: ${dqn.Estimated_Emissions_kgCO2} kg`;
+      document.getElementById("dqnStatusBadge").textContent = `${dqn.Delivery_Status} · Reward ${dqn.RL_Reward}`;
+
+      animateRoute(data.pickup_coords, data.delivery_coords, `${dqn.Vehicle_ID} (${dqn.Vehicle_Type})`, dqn.Vehicle_Type);
+
+      // Render XAI Q-Value Bars
+      const topSlots = data.xai_ranking.slice(0, 6);
+      const maxQ = Math.max(...topSlots.map(s => Math.abs(s.q_value)), 1);
+      document.getElementById("xaiBars").innerHTML = topSlots.map((s, idx) => {
+        const pct = Math.min(100, Math.max(12, Math.round(((s.q_value + maxQ) / (2 * maxQ)) * 100)));
+        const barColor = !s.valid ? "bg-rose-500/50" : (idx === 0 ? "bg-emerald-400" : "bg-sky-500/70");
+        return `
+          <div>
+            <div class="flex justify-between text-[11px] mb-0.5">
+              <span class="${idx === 0 && s.valid ? 'text-emerald-300 font-semibold' : 'text-slate-300'}">${s.slot} ${idx === 0 && s.valid ? '★ Chosen' : ''}</span>
+              <span class="text-slate-400">${s.valid ? 'Q = ' + s.q_value : 'MASKED (' + s.reason + ')'}</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5">
+              <div class="${barColor} h-1.5 rounded-full" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const rows = [
+        { name: "Trained DQN Agent (Ours)", d: data.dqn, highlight: true },
+        { name: "Rule-Based Heuristic", d: data.rule_based, highlight: false },
+        { name: "Random Valid Baseline", d: data.random_valid, highlight: false },
+      ];
+      document.getElementById("liveCompareBody").innerHTML = rows.map(r => `
+        <tr class="${r.highlight ? 'bg-emerald-500/10 font-semibold text-emerald-200' : ''}">
+          <td class="py-2.5 pr-3">${r.name}</td>
+          <td class="py-2.5 px-3">${r.d.Vehicle_ID} (${r.d.Vehicle_Type} ${r.d.Vehicle_Capacity_kg}kg)</td>
+          <td class="py-2.5 px-3">${r.d.Total_Delivery_Time_min}m</td>
+          <td class="py-2.5 px-3">₹${r.d.Operating_Cost_INR}</td>
+          <td class="py-2.5 px-3">${r.d.Estimated_Emissions_kgCO2}kg</td>
+          <td class="py-2.5 px-3">${r.d.Capacity_Utilization_Pct}%</td>
+          <td class="py-2.5 pl-3 text-right">${r.d.RL_Reward}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function runShiftSimulation() {
+      const btn = document.getElementById("runShiftBtn");
+      btn.textContent = "Simulating Fleet...";
+      const nOrders = parseInt(document.getElementById("shiftOrdersCount").value, 10);
+      const res = await fetch("/api/simulate-shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ n_orders: nOrders, seed: Math.floor(Math.random() * 9000) + 100 }),
+      });
+      const data = await res.json();
+      const s = data.summary;
+
+      document.getElementById("kpiCo2Saved").textContent = `${s.co2_saved_kg} kg`;
+      document.getElementById("kpiTrees").textContent = `≈ ${s.trees_equivalent} tree-days offset`;
+      document.getElementById("kpiCostSaved").textContent = `₹${s.cost_saved_inr}`;
+      document.getElementById("kpiOnTime").textContent = `${s.dqn_on_time_pct}%`;
+      document.getElementById("kpiBaseOnTime").textContent = `Baseline: ${s.base_on_time_pct}%`;
+      document.getElementById("kpiEvShare").textContent = `${s.ev_share_pct}% EV`;
+      document.getElementById("kpiRecharges").textContent = `${s.recharge_cycles_triggered} depot recharges`;
+      document.getElementById("kpiEndSoc").textContent = `EV ${s.avg_ev_soc_end}% | P ${s.avg_petrol_end}% | D ${s.avg_diesel_end}%`;
+
+      document.getElementById("shiftTimelineBody").innerHTML = data.timeline.map(row => `
+        <tr class="hover:bg-slate-800/40">
+          <td class="py-2 px-3 text-slate-400">${row.step}</td>
+          <td class="py-2 px-3 font-medium text-slate-200">${row.corridor}</td>
+          <td class="py-2 px-3">${row.weight_kg} kg</td>
+          <td class="py-2 px-3">${row.traffic}</td>
+          <td class="py-2 px-3 text-emerald-300 font-medium">${row.vehicle}</td>
+          <td class="py-2 px-3">${row.energy_before}%</td>
+          <td class="py-2 px-3">${row.co2_kg} kg</td>
+          <td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[10px] ${row.status === 'On Time' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}">${row.status}</span></td>
+          <td class="py-2 px-3 text-right font-semibold">${row.reward}</td>
+        </tr>
+      `).join("");
+      btn.textContent = "Simulate Full NCR Shift";
+    }
+
+    document.getElementById("dispatchForm").addEventListener("submit", runDispatch);
+    document.getElementById("runShiftBtn").addEventListener("click", runShiftSimulation);
+    window.addEventListener("DOMContentLoaded", () => {
+      runDispatch();
+      runShiftSimulation();
+    });
+  </script>
+</body>
+</html>
