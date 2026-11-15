@@ -1,4 +1,5 @@
 import json
+import urllib.request
 import numpy as np
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -10,7 +11,7 @@ from src.env import DeliveryCoordinationEnv
 from src.dqn_agent import MaskedDQNAgent
 from src.baselines import select_random_valid_action, select_rule_based_action
 
-app = FastAPI(title="Sustainable Last-Mile Delivery Control Tower v2.0")
+app = FastAPI(title="Sustainable Last-Mile Delivery Control Tower v2.1")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 jinja_env = Environment(loader=FileSystemLoader("templates"))
 
@@ -26,7 +27,6 @@ with open("models/benchmark_results.json", "r", encoding="utf-8") as f:
 agent = MaskedDQNAgent(state_dim=env.state_dim, action_dim=env.n_actions, device="cpu")
 agent.load("models/dqn_model_v1.pth")
 
-# Real GPS Coordinates (Lat, Lon) for all 20 Delhi-NCR Zones
 NCR_ZONE_COORDS = {
     "Connaught Place": [28.6315, 77.2167],
     "South Delhi": [28.5245, 77.2066],
@@ -50,11 +50,66 @@ NCR_ZONE_COORDS = {
     "Faridabad": [28.4089, 77.3178],
 }
 
+ROUTE_CACHE = {}
+
+
 def get_zone_latlon(zone_name: str, idx: int = 0) -> list[float]:
     if zone_name in NCR_ZONE_COORDS:
         return NCR_ZONE_COORDS[zone_name]
     angle = (idx * 18) * (np.pi / 180.0)
     return [round(28.6139 + 0.14 * np.sin(angle), 4), round(77.2090 + 0.16 * np.cos(angle), 4)]
+
+
+def fetch_exact_osrm_route(start_latlon: list[float], end_latlon: list[float], fallback_km: float):
+    """Fetch real road geometry, exact road distance (km), and major road names via OSRM."""
+    cache_key = f"{start_latlon[0]},{start_latlon[1]}->{end_latlon[0]},{end_latlon[1]}"
+    if cache_key in ROUTE_CACHE:
+        return ROUTE_CACHE[cache_key]
+
+    # OSRM expects lon,lat order
+    url = (
+        f"https://router.project-osrm.org/route/v1/driving/"
+        f"{start_latlon[1]},{start_latlon[0]};{end_latlon[1]},{end_latlon[0]}"
+        f"?overview=full&geometries=geojson&steps=true"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "SustainableLastMileRL/2.1"})
+        with urllib.request.urlopen(req, timeout=4.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if data.get("code") == "Ok" and data.get("routes"):
+            route = data["routes"][0]
+            exact_km = round(route["distance"] / 1000.0, 2)
+            base_mins = round(route["duration"] / 60.0, 1)
+            # Flip GeoJSON [lon, lat] -> Leaflet [lat, lon]
+            coords = [[pt[1], pt[0]] for pt in route["geometry"]["coordinates"]]
+
+            # Extract distinct major road names along the route
+            roads = []
+            for leg in route.get("legs", []):
+                for step in leg.get("steps", []):
+                    road_name = step.get("name", "").strip()
+                    if road_name and road_name not in roads:
+                        roads.append(road_name)
+
+            result = {
+                "distance_km": exact_km,
+                "osrm_base_min": base_mins,
+                "route_coords": coords,
+                "major_roads": roads[:6],
+                "source": "OSRM Live Road Network",
+            }
+            ROUTE_CACHE[cache_key] = result
+            return result
+    except Exception:
+        pass
+
+    return {
+        "distance_km": fallback_km,
+        "osrm_base_min": round(fallback_km * 2.4, 1),
+        "route_coords": [start_latlon, end_latlon],
+        "major_roads": ["Direct Corridor Fallback"],
+        "source": "Physics Matrix Fallback",
+    }
 
 
 class DispatchRequest(BaseModel):
@@ -95,11 +150,21 @@ async def simulate_dispatch(payload: DispatchRequest):
     pair_key = f"{payload.pickup_zone}||{payload.delivery_zone}"
     reverse_key = f"{payload.delivery_zone}||{payload.pickup_zone}"
     if payload.pickup_zone == payload.delivery_zone:
-        distance_km = 4.5
+        fallback_km = 4.5
     else:
-        distance_km = physics_cfg["zone_distance_km"].get(
+        fallback_km = physics_cfg["zone_distance_km"].get(
             pair_key, physics_cfg["zone_distance_km"].get(reverse_key, 18.5)
         )
+
+    zones = physics_cfg["zones"]
+    p_idx = zones.index(payload.pickup_zone) if payload.pickup_zone in zones else 0
+    d_idx = zones.index(payload.delivery_zone) if payload.delivery_zone in zones else 1
+    pickup_latlon = get_zone_latlon(payload.pickup_zone, p_idx)
+    delivery_latlon = get_zone_latlon(payload.delivery_zone, d_idx)
+
+    # Fetch exact road distance & turn-by-turn geometry
+    road_info = fetch_exact_osrm_route(pickup_latlon, delivery_latlon, fallback_km)
+    distance_km = road_info["distance_km"]
 
     order_row = {
         "Order_Weight_kg": payload.order_weight_kg,
@@ -115,7 +180,6 @@ async def simulate_dispatch(payload: DispatchRequest):
     state = env._encode_order_state(order_row)
     mask = env.get_valid_action_mask(order_row)
 
-    # Extract raw Q-values across all 15 slots for XAI Explainability Panel
     import torch
     with torch.no_grad():
         state_t = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
@@ -145,14 +209,13 @@ async def simulate_dispatch(payload: DispatchRequest):
     rand_action = select_random_valid_action(mask, rng)
     rand_res = env.simulate_order_dispatch(order_row, rand_action, mutate_fleet=False)
 
-    zones = physics_cfg["zones"]
-    p_idx = zones.index(payload.pickup_zone) if payload.pickup_zone in zones else 0
-    d_idx = zones.index(payload.delivery_zone) if payload.delivery_zone in zones else 1
-
     return {
         "distance_km": distance_km,
-        "pickup_coords": get_zone_latlon(payload.pickup_zone, p_idx),
-        "delivery_coords": get_zone_latlon(payload.delivery_zone, d_idx),
+        "route_source": road_info["source"],
+        "major_roads": road_info["major_roads"],
+        "route_coords": road_info["route_coords"],
+        "pickup_coords": pickup_latlon,
+        "delivery_coords": delivery_latlon,
         "dqn": dqn_res,
         "rule_based": rule_res,
         "random_valid": rand_res,
@@ -162,7 +225,6 @@ async def simulate_dispatch(payload: DispatchRequest):
 
 @app.post("/api/simulate-shift")
 async def simulate_full_shift(payload: ShiftRequest):
-    """Upgrade 3: Stateful Sequential Multi-Order Fleet Simulation with Battery Depletion & Recharging."""
     sim_env = DeliveryCoordinationEnv(episode_length=payload.n_orders, seed=payload.seed)
     state, mask = sim_env.reset()
 
@@ -180,12 +242,9 @@ async def simulate_full_shift(payload: ShiftRequest):
 
     for step_i in range(payload.n_orders):
         order = sim_env.episode_orders.iloc[step_i].to_dict()
-
-        # DQN stateful step (mutates 100-vehicle battery/fuel!)
         action = agent.select_action(state, mask, epsilon=0.0)
         next_state, reward, done, next_mask, info = sim_env.step(action)
 
-        # Baseline parallel step on identical order
         b_mask = base_env.get_valid_action_mask()
         b_act = select_random_valid_action(b_mask, base_rng)
         _, _, _, _, b_info = base_env.step(b_act)
