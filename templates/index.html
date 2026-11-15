@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sustainable Last-Mile Delivery Coordinator (DQN)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <span class="text-xs uppercase tracking-widest text-emerald-400 font-semibold">Reinforcement Learning Dispatch Engine</span>
+        <h1 class="text-xl md:text-2xl font-bold text-white">Sustainable Last-Mile Delivery Coordinator</h1>
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">Delhi-NCR 20 Zones</span>
+        <span class="px-3 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">100 Vehicles (EV/Petrol/Diesel)</span>
+        <span class="px-3 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30">Action-Masked DQN</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+    <!-- Top Section: Live Order Simulator + Live Comparison -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- Form Card -->
+      <section class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+        <h2 class="text-lg font-semibold text-white mb-1">1. Live Order & Scenario Dispatch</h2>
+        <p class="text-xs text-slate-400 mb-5">Configure order parameters to test real-time DQN vehicle assignment against baselines.</p>
+
+        <form id="dispatchForm" class="space-y-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Pickup Zone</label>
+              <select id="pickup_zone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                {% for z in zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Delivery Zone</label>
+              <select id="delivery_zone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                {% for z in zones %}<option value="{{ z }}" {% if loop.index == 4 %}selected{% endif %}>{{ z }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Order Weight (0.5 - 25 kg)</label>
+              <input id="order_weight_kg" type="number" step="0.5" min="0.5" max="25" value="12.5"
+                     class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">SLA Deadline (min)</label>
+              <input id="deadline_min" type="number" min="20" max="360" value="95"
+                     class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Priority</label>
+              <select id="priority" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                {% for p in priorities %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Traffic Level</label>
+              <select id="traffic_level" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                {% for t in traffic_levels %}<option value="{{ t }}" {% if t == 'High' %}selected{% endif %}>{{ t }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Weather</label>
+              <select id="weather" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                {% for w in weather_conditions %}<option value="{{ w }}">{{ w }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <button type="submit"
+                  class="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg transition shadow-lg shadow-emerald-500/20">
+            Run RL Dispatch Inference
+          </button>
+        </form>
+      </section>
+
+      <!-- Live Inference Result Card -->
+      <section class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-lg font-semibold text-white">2. Recommended Dispatch & Side-by-Side Comparison</h2>
+              <p class="text-xs text-slate-400">Estimated Corridor Distance: <span id="corridorDist" class="text-emerald-400 font-semibold">-- km</span></p>
+            </div>
+            <span id="dqnStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Ready</span>
+          </div>
+
+          <!-- Highlighted DQN Recommendation -->
+          <div class="bg-gradient-to-r from-emerald-950/60 to-slate-800/80 border border-emerald-500/30 rounded-xl p-4 mb-5">
+            <div class="text-xs text-emerald-400 uppercase font-semibold mb-1">Optimal DQN Assignment</div>
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <div class="text-xl font-bold text-white" id="dqnVehicle
