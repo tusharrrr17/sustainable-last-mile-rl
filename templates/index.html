@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Autonomous Last-Mile Delivery Control Tower v2.0 (DQN)</title>
+  <title>Autonomous Last-Mile Delivery Control Tower v2.1 (DQN + OSRM)</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    #ncrMap { height: 340px; width: 100%; border-radius: 0.75rem; z-index: 1; }
+    #ncrMap { height: 350px; width: 100%; border-radius: 0.75rem; z-index: 1; }
     .leaflet-container { background: #020617 !important; }
   </style>
 </head>
@@ -18,12 +18,12 @@
       <div>
         <div class="flex items-center gap-2">
           <span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span class="text-xs uppercase tracking-widest text-emerald-400 font-semibold">Autonomous Fleet Control Tower v2.0</span>
+          <span class="text-xs uppercase tracking-widest text-emerald-400 font-semibold">Autonomous Fleet Control Tower v2.1</span>
         </div>
         <h1 class="text-xl md:text-2xl font-bold text-white">Sustainable Last-Mile Delivery Coordinator (RL)</h1>
       </div>
       <div class="flex flex-wrap items-center gap-2 text-xs">
-        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">Live NCR Geo-Telemetry</span>
+        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">OSRM Exact Road Routing</span>
         <span class="px-3 py-1 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">XAI Q-Value Ranking</span>
         <span class="px-3 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30">Stateful 100-Vehicle Shift Sim</span>
       </div>
@@ -31,13 +31,12 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
-    <!-- SECTION 1: Live Single-Order Dispatch + Interactive Delhi-NCR Map + XAI -->
+    <!-- SECTION 1: Live Single-Order Dispatch + Interactive Delhi-NCR Road Map + XAI -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <!-- Left: Dispatch Form + XAI Q-Value Bars -->
       <div class="lg:col-span-5 space-y-6">
         <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
           <h2 class="text-lg font-semibold text-white mb-1">1. Live NCR Order Dispatch</h2>
-          <p class="text-xs text-slate-400 mb-4">Configure route & constraints to watch the DQN dispatch & animate on the NCR map.</p>
+          <p class="text-xs text-slate-400 mb-4">Fetches exact Delhi-NCR road geometry & distance, then runs DQN inference.</p>
 
           <form id="dispatchForm" class="space-y-3.5">
             <div class="grid grid-cols-2 gap-3">
@@ -50,7 +49,7 @@
               <div>
                 <label class="block text-xs text-slate-400 mb-1">Delivery Zone</label>
                 <select id="delivery_zone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-                  {% for z in zones %}<option value="{{ z }}" {% if loop.index == 4 %}selected{% endif %}>{{ z }}</option>{% endfor %}
+                  {% for z in zones %}<option value="{{ z }}" {% if loop.index == 16 %}selected{% endif %}>{{ z }}</option>{% endfor %}
                 </select>
               </div>
             </div>
@@ -89,9 +88,9 @@
               </div>
             </div>
 
-            <button type="submit"
+            <button id="dispatchBtn" type="submit"
                     class="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg transition shadow-lg shadow-emerald-500/20">
-              Dispatch Vehicle & Animate Corridor
+              Compute Exact Road Route & Dispatch DQN
             </button>
           </form>
         </section>
@@ -102,20 +101,29 @@
             <h3 class="text-sm font-semibold text-white">Explainable AI: Neural Q-Value Ranking</h3>
             <span class="text-[11px] text-slate-400">Top 6 / 15 Fleet Slots</span>
           </div>
-          <p class="text-xs text-slate-400 mb-3">Why did the DQN pick this vehicle? Higher Q-value = higher expected long-term reward; overweight slots are hard-masked.</p>
+          <p class="text-xs text-slate-400 mb-3">Shows DQN Q-values across candidate vehicles and hard-masked overweight/low-battery slots.</p>
           <div id="xaiBars" class="space-y-2 text-xs"></div>
         </section>
       </div>
 
-      <!-- Right: Live NCR Map + Comparison Table -->
-      <section class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between space-y-5">
+      <!-- Right: Live NCR Road Map + Route Strip + Comparison Table -->
+      <section class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between space-y-4">
         <div>
-          <div class="flex items-center justify-between mb-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
             <div>
-              <h2 class="text-lg font-semibold text-white">2. Live Delhi-NCR Corridor Telemetry</h2>
-              <p class="text-xs text-slate-400">Corridor Distance: <span id="corridorDist" class="text-emerald-400 font-semibold">-- km</span></p>
+              <h2 class="text-lg font-semibold text-white">2. Live Delhi-NCR Road Corridor Telemetry</h2>
+              <p class="text-xs text-slate-400">
+                Exact Road Distance: <span id="corridorDist" class="text-emerald-400 font-bold text-sm">-- km</span>
+                <span id="routeSourceBadge" class="ml-2 px-2 py-0.5 rounded bg-slate-800 text-[10px] text-sky-300">OSRM Road Network</span>
+              </p>
             </div>
             <span id="dqnStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Ready</span>
+          </div>
+
+          <!-- Turn-by-Turn Major Highway/Road Strip -->
+          <div class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 mb-3 text-xs text-slate-300 flex items-center gap-2 overflow-x-auto">
+            <span class="text-sky-400 font-semibold shrink-0">Route Path:</span>
+            <span id="majorRoadsText" class="truncate text-slate-300">Calculating NCR road corridor...</span>
           </div>
 
           <!-- Interactive Leaflet Map -->
@@ -151,7 +159,7 @@
       </section>
     </div>
 
-    <!-- SECTION 2: Stateful Multi-Order NCR Shift Simulator (Upgrade 3) -->
+    <!-- SECTION 2: Stateful Multi-Order NCR Shift Simulator -->
     <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -172,7 +180,6 @@
         </div>
       </div>
 
-      <!-- Shift ESG & Fleet Telemetry KPI Cards -->
       <div id="shiftKpiGrid" class="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
           <div class="text-[11px] text-slate-400">CO2 Saved vs Baseline</div>
@@ -182,7 +189,7 @@
         <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
           <div class="text-[11px] text-slate-400">Fuel/Energy Cost Saved</div>
           <div id="kpiCostSaved" class="text-lg font-bold text-sky-400 mt-0.5">₹--</div>
-          <div class="text-[11px] text-slate-500">Direct operational savings</div>
+          <div id="kpiBaseCostSub" class="text-[11px] text-slate-500">Direct operational savings</div>
         </div>
         <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5">
           <div class="text-[11px] text-slate-400">DQN vs Baseline On-Time</div>
@@ -201,7 +208,6 @@
         </div>
       </div>
 
-      <!-- Shift Dispatch Log Table -->
       <div class="max-h-64 overflow-y-auto border border-slate-800 rounded-xl">
         <table class="w-full text-left text-xs border-collapse">
           <thead class="bg-slate-950 sticky top-0 text-slate-400 border-b border-slate-800">
@@ -274,64 +280,67 @@
   <script>
     const ZONE_COORDS = {{ zone_coords_json | safe }};
 
-    // Initialize Dark CartoDB Leaflet Map centered on Delhi-NCR
     const map = L.map("ncrMap").setView([28.585, 77.21], 10);
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
       attribution: "&copy; OpenStreetMap &copy; CARTO",
       maxZoom: 18,
     }).addTo(map);
 
-    // Plot all 20 NCR hub nodes
     Object.entries(ZONE_COORDS).forEach(([zone, coords]) => {
       L.circleMarker(coords, {
         radius: 4,
         color: "#38bdf8",
         fillColor: "#38bdf8",
-        fillOpacity: 0.6,
+        fillOpacity: 0.65,
         weight: 1,
       }).bindTooltip(zone).addTo(map);
     });
 
     let routeLine = null;
+    let routeGlow = null;
     let pickupMarker = null;
     let dropMarker = null;
     let vehicleMarker = null;
     let animTimer = null;
 
-    function animateRoute(start, end, vehicleLabel, vType) {
+    function animateExactRoadRoute(routeCoords, start, end, vehicleLabel, vType) {
       if (routeLine) map.removeLayer(routeLine);
+      if (routeGlow) map.removeLayer(routeGlow);
       if (pickupMarker) map.removeLayer(pickupMarker);
       if (dropMarker) map.removeLayer(dropMarker);
       if (vehicleMarker) map.removeLayer(vehicleMarker);
       if (animTimer) clearInterval(animTimer);
 
       const lineColor = vType === "EV" ? "#10b981" : (vType === "Petrol" ? "#f59e0b" : "#ef4444");
-      routeLine = L.polyline([start, end], { color: lineColor, weight: 4, dashArray: "8, 6" }).addTo(map);
+      const pts = (routeCoords && routeCoords.length > 1) ? routeCoords : [start, end];
 
-      pickupMarker = L.circleMarker(start, { radius: 7, color: "#fff", fillColor: "#3b82f6", fillOpacity: 1, weight: 2 })
+      routeGlow = L.polyline(pts, { color: lineColor, weight: 9, opacity: 0.22 }).addTo(map);
+      routeLine = L.polyline(pts, { color: lineColor, weight: 4, opacity: 0.95 }).addTo(map);
+
+      pickupMarker = L.circleMarker(pts[0], { radius: 7, color: "#fff", fillColor: "#3b82f6", fillOpacity: 1, weight: 2 })
         .bindPopup("Pickup Hub").addTo(map);
-      dropMarker = L.circleMarker(end, { radius: 7, color: "#fff", fillColor: "#ec4899", fillOpacity: 1, weight: 2 })
+      dropMarker = L.circleMarker(pts[pts.length - 1], { radius: 7, color: "#fff", fillColor: "#ec4899", fillOpacity: 1, weight: 2 })
         .bindPopup("Drop Destination").addTo(map);
 
-      vehicleMarker = L.circleMarker(start, { radius: 9, color: "#ffffff", fillColor: lineColor, fillOpacity: 1, weight: 2.5 })
+      vehicleMarker = L.circleMarker(pts[0], { radius: 9, color: "#ffffff", fillColor: lineColor, fillOpacity: 1, weight: 2.5 })
         .bindTooltip(vehicleLabel, { permanent: true, direction: "top", offset: [0, -8] })
         .addTo(map);
 
       map.fitBounds(routeLine.getBounds(), { padding: [45, 45] });
 
-      let step = 0;
-      const totalSteps = 50;
+      // Animate smoothly along every real road waypoint
+      let idx = 0;
+      const stepStride = Math.max(1, Math.floor(pts.length / 80));
       animTimer = setInterval(() => {
-        step = (step + 1) % (totalSteps + 1);
-        const t = step / totalSteps;
-        const lat = start[0] + (end[0] - start[0]) * t;
-        const lon = start[1] + (end[1] - start[1]) * t;
-        vehicleMarker.setLatLng([lat, lon]);
-      }, 60);
+        idx = (idx + stepStride) % pts.length;
+        vehicleMarker.setLatLng(pts[idx]);
+      }, 55);
     }
 
     async function runDispatch(e) {
       if (e) e.preventDefault();
+      const btn = document.getElementById("dispatchBtn");
+      btn.textContent = "Fetching Exact NCR Road Route...";
       const payload = {
         pickup_zone: document.getElementById("pickup_zone").value,
         delivery_zone: document.getElementById("delivery_zone").value,
@@ -348,15 +357,17 @@
       });
       const data = await res.json();
       document.getElementById("corridorDist").textContent = `${data.distance_km} km`;
+      document.getElementById("routeSourceBadge").textContent = data.route_source || "OSRM Road Network";
+      document.getElementById("majorRoadsText").textContent =
+        (data.major_roads && data.major_roads.length) ? data.major_roads.join("  →  ") : "Local NCR Sector Corridor";
 
       const dqn = data.dqn;
       document.getElementById("dqnVehicleTitle").textContent = `${dqn.Vehicle_ID} (${dqn.Vehicle_Type} · ${dqn.Vehicle_Capacity_kg} kg)`;
       document.getElementById("dqnVehicleMeta").textContent = `ETA: ${dqn.Total_Delivery_Time_min} min | Cost: ₹${dqn.Operating_Cost_INR} | CO2: ${dqn.Estimated_Emissions_kgCO2} kg`;
       document.getElementById("dqnStatusBadge").textContent = `${dqn.Delivery_Status} · Reward ${dqn.RL_Reward}`;
 
-      animateRoute(data.pickup_coords, data.delivery_coords, `${dqn.Vehicle_ID} (${dqn.Vehicle_Type})`, dqn.Vehicle_Type);
+      animateExactRoadRoute(data.route_coords, data.pickup_coords, data.delivery_coords, `${dqn.Vehicle_ID} (${dqn.Vehicle_Type})`, dqn.Vehicle_Type);
 
-      // Render XAI Q-Value Bars
       const topSlots = data.xai_ranking.slice(0, 6);
       const maxQ = Math.max(...topSlots.map(s => Math.abs(s.q_value)), 1);
       document.getElementById("xaiBars").innerHTML = topSlots.map((s, idx) => {
@@ -391,6 +402,7 @@
           <td class="py-2.5 pl-3 text-right">${r.d.RL_Reward}</td>
         </tr>
       `).join("");
+      btn.textContent = "Compute Exact Road Route & Dispatch DQN";
     }
 
     async function runShiftSimulation() {
