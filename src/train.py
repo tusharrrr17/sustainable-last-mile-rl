@@ -104,7 +104,7 @@ def train_dqn(
     rolling = np.convolve(rewards, np.ones(15) / 15, mode="valid")
     ax.plot(history["episode"], rewards, alpha=0.35, color="#3b82f6", label="Episode Reward")
     ax.plot(range(15, episodes + 1), rolling, color="#10b981", linewidth=2.2, label="15-Ep Moving Avg")
-    ax.set_title("DQN Training Convergence - Sustainable Last-Mile Delivery")
+    ax.set_title("DQN Training  - Sustainable Last-Mile Delivery")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Total Episode Reward (50 Orders)")
     ax.grid(True, alpha=0.25)
